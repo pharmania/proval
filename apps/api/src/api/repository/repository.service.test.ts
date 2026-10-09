@@ -326,6 +326,25 @@ describe("Update GitLab Repository", () => {
         }
     });
 
+    it("accepts a userPrompt of exactly the effective limit", async () => {
+        const previousMaxLength = process.env.PROVAL_USER_PROMPT_MAX_LENGTH;
+        try {
+            delete process.env.PROVAL_USER_PROMPT_MAX_LENGTH;
+            const atDefaultLimit = "a".repeat(USER_PROMPT_MAX_LENGTH);
+            updateReturningMock.mockResolvedValueOnce([makeRepositoryRow({ userPrompt: atDefaultLimit })]);
+            const updatedAtDefault = await repositoryService.update(1, { userPrompt: atDefaultLimit });
+            expect(updatedAtDefault.userPrompt).toBe(atDefaultLimit);
+
+            process.env.PROVAL_USER_PROMPT_MAX_LENGTH = "50";
+            const atCustomLimit = "b".repeat(50);
+            updateReturningMock.mockResolvedValueOnce([makeRepositoryRow({ userPrompt: atCustomLimit })]);
+            const updatedAtCustom = await repositoryService.update(1, { userPrompt: atCustomLimit });
+            expect(updatedAtCustom.userPrompt).toBe(atCustomLimit);
+        } finally {
+            restoreUserPromptMaxLengthEnv(previousMaxLength);
+        }
+    });
+
     it("uses PROVAL_USER_PROMPT_MAX_LENGTH when the deployment sets it", async () => {
         const previousMaxLength = process.env.PROVAL_USER_PROMPT_MAX_LENGTH;
         process.env.PROVAL_USER_PROMPT_MAX_LENGTH = "50";
