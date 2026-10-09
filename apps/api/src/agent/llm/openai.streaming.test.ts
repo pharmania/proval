@@ -195,11 +195,12 @@ describe("createOpenAiSender streaming", () => {
         });
 
         // The OpenAI SDK turns an error frame into an APIError before the
-        // accumulator sees the chunk, and that error carries no status. The
-        // accumulator keeps the code for the case where a chunk reaches it.
+        // accumulator sees the chunk; the sender copies the provider code onto
+        // the error status so the agent loop can retry rate limits.
         const error = await sender.send([{ role: "user", content: "hi" }], []).catch((e: unknown) => e);
         expect(error).toBeInstanceOf(Error);
         expect((error as Error).message).toBe("rate limit reached");
+        expect((error as { status?: number }).status).toBe(429);
     });
 
     test("fails when the stream ends without a finish reason", async () => {
@@ -324,5 +325,42 @@ describe("createOpenAiSender without streaming", () => {
         expect(result.finishReason).toBe("tool_calls");
         expect(result.requestId).toBe("chatcmpl-plain");
         expect(result.usage).toEqual({ inputToken: 10, outputToken: 4, cachedInputToken: 1 });
+    });
+
+    function bufferedSender(body: unknown) {
+        const fetchStub = async (_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> =>
+            new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
+        return createOpenAiSender({
+            apiKey: "test-key",
+            baseURL: "https://gateway.example/v1",
+            model: "m",
+            timeoutSecond: 60,
+            stream: false,
+            fetch: fetchStub,
+        });
+    }
+
+    test("throws the provider error with its status when a buffered reply carries an error body", async () => {
+        const sender = bufferedSender({ error: { code: 429, message: "rate limit reached" } });
+
+        const error = await sender.send([{ role: "user", content: "hi" }], []).catch((e: unknown) => e);
+        expect((error as Error).message).toBe("rate limit reached");
+        expect((error as { status?: number }).status).toBe(429);
+    });
+
+    test("throws the provider error when the error code is not numeric", async () => {
+        const sender = bufferedSender({ error: { code: "rate_limited", message: "slow down" } });
+
+        const error = await sender.send([{ role: "user", content: "hi" }], []).catch((e: unknown) => e);
+        expect((error as Error).message).toBe("slow down");
+        expect((error as { status?: number }).status).toBeUndefined();
+    });
+
+    test("fails loudly when a buffered reply has neither an error message nor choices", async () => {
+        const sender = bufferedSender({ id: "chatcmpl-empty", choices: [] });
+
+        await expect(sender.send([{ role: "user", content: "hi" }], [])).rejects.toThrow(
+            "The model provider returned a completion without choices",
+        );
     });
 });

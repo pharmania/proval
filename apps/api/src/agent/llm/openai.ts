@@ -3,9 +3,9 @@ import type { LlmSender, Message } from "./loop.js";
 import type { SenderSDKConfig } from "./factory.js";
 import z from "zod";
 
-const openRouterErrorSchema = z.object({
+const completionErrorSchema = z.object({
     error: z.object({
-        code: z.number(),
+        code: z.union([z.number(), z.string()]).optional(),
         message: z.string(),
         metadata: z.record(z.string(), z.unknown()).optional(),
     }),
@@ -52,7 +52,22 @@ export function createOpenAiSender(config: SenderSDKConfig): LlmSender {
                     stream_options: { include_usage: true },
                 });
 
-                const accumulated = await accumulateChatCompletionStream(stream);
+                let accumulated: AccumulatedChatCompletion;
+                try {
+                    accumulated = await accumulateChatCompletionStream(stream);
+                } catch (error) {
+                    // The SDK turns an in-stream error frame into an APIError
+                    // before the accumulator sees it; that error keeps the
+                    // provider code but no status, which the retry check reads.
+                    if (
+                        error instanceof OpenAI.APIError &&
+                        error.status === undefined &&
+                        typeof error.code === "number"
+                    ) {
+                        (error as { status?: number }).status = error.code;
+                    }
+                    throw error;
+                }
 
                 // A provider can answer 200 and report the failure inside the stream.
                 if (accumulated.error) {
@@ -87,14 +102,20 @@ export function createOpenAiSender(config: SenderSDKConfig): LlmSender {
 
             const completion = await client.chat.completions.create({ ...request });
 
-            if (client.baseURL?.includes("openrouter.ai")) {
-                const result = openRouterErrorSchema.safeParse(completion);
-                if (result.success) {
-                    throw new Error(result.data.error.message);
+            // A provider can answer 200 and report the failure inside the body.
+            const result = completionErrorSchema.safeParse(completion);
+            if (result.success) {
+                const error = new Error(result.data.error.message) as Error & { status?: number };
+                if (typeof result.data.error.code === "number") {
+                    error.status = result.data.error.code;
                 }
+                throw error;
             }
 
             const choice = completion.choices[0];
+            if (!choice) {
+                throw new Error("The model provider returned a completion without choices");
+            }
             const message = choice.message;
 
             return {
