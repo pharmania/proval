@@ -250,18 +250,20 @@
             {/snippet}
         </FormField>
 
-        <FormField
-            label="Stream responses"
-            description="Send the completion as a stream. Keep this on when a proxy or CDN sits between Proval and the model, because a buffered response can be cut while a slow model still reasons."
-            linkLabelToControl={false}
-            upper>
-            {#snippet children({ id: _id })}
-                <div class="flex items-center justify-between gap-2" id={_id}>
-                    <Description>{stream ? "Streaming" : "Buffered"}</Description>
-                    <ToggleSwitch bind:checked={stream} />
-                </div>
-            {/snippet}
-        </FormField>
+        {#if provider !== "anthropic"}
+            <FormField
+                label="Stream responses"
+                description="Send the completion as a stream. Keep this on when a proxy or CDN sits between Proval and the model, because a buffered response can be cut while a slow model still reasons."
+                linkLabelToControl={false}
+                upper>
+                {#snippet children({ id: _id })}
+                    <div class="flex items-center justify-between gap-2" id={_id}>
+                        <Description>{stream ? "Streaming" : "Buffered"}</Description>
+                        <ToggleSwitch bind:checked={stream} />
+                    </div>
+                {/snippet}
+            </FormField>
+        {/if}
 
         {#if mode === "edit" && modelProviderId}
             <div class="flex justify-end pt-2">
