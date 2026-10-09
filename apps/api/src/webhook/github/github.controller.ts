@@ -369,7 +369,7 @@ async function handleIssueCommentWebhook(
             baseURL: modelProvider.baseUrl,
             model: repository.modelName,
             timeoutSecond: modelProvider.timeoutSecond,
-        stream: modelProvider.stream,
+            stream: modelProvider.stream,
             reasoningEffort: repository.reasoningEffort,
         });
 

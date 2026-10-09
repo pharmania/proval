@@ -91,7 +91,12 @@ describe("createOpenAiSender streaming", () => {
             chunkFrame({
                 delta: {
                     tool_calls: [
-                        { index: 1, id: "call_2", type: "function", function: { name: "grep", arguments: '{"query":' } },
+                        {
+                            index: 1,
+                            id: "call_2",
+                            type: "function",
+                            function: { name: "grep", arguments: '{"query":' },
+                        },
                     ],
                 },
             }),
@@ -224,7 +229,10 @@ describe("accumulateChatCompletionStream", () => {
     test("orders tool calls by index even when the provider interleaves them", async () => {
         const accumulated = await accumulateChatCompletionStream(
             from([
-                { id: "c1", choices: [{ index: 0, delta: { tool_calls: [{ index: 2, id: "b", function: { name: "b" } }] } }] },
+                {
+                    id: "c1",
+                    choices: [{ index: 0, delta: { tool_calls: [{ index: 2, id: "b", function: { name: "b" } }] } }],
+                },
                 { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "a", function: { name: "a" } }] } }] },
                 { choices: [{ index: 0, delta: { tool_calls: [{ index: 2, function: { arguments: "{}" } }] } }] },
                 { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: "{}" } }] } }] },
@@ -251,7 +259,11 @@ describe("accumulateChatCompletionStream", () => {
     test("keeps a partial tool call id and name from an earlier chunk", async () => {
         const accumulated = await accumulateChatCompletionStream(
             from([
-                { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "call_x", function: { name: "grep" } }] } }] },
+                {
+                    choices: [
+                        { index: 0, delta: { tool_calls: [{ index: 0, id: "call_x", function: { name: "grep" } }] } },
+                    ],
+                },
                 { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '{"q":1}' } }] } }] },
             ]),
         );
@@ -278,7 +290,11 @@ describe("createOpenAiSender without streaming", () => {
                                 role: "assistant",
                                 content: "buffered answer",
                                 tool_calls: [
-                                    { id: "call_9", type: "function", function: { name: "grep", arguments: '{"query":"x"}' } },
+                                    {
+                                        id: "call_9",
+                                        type: "function",
+                                        function: { name: "grep", arguments: '{"query":"x"}' },
+                                    },
                                 ],
                             },
                             finish_reason: "tool_calls",

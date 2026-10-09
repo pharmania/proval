@@ -36,7 +36,8 @@ export function createOpenAiSender(config: SenderSDKConfig): LlmSender {
                 ...(openAiTools.length > 0 ? { tools: openAiTools, tool_choice: "auto" as const } : {}),
                 ...(config.reasoningEffort
                     ? {
-                          reasoning_effort: config.reasoningEffort as OpenAI.Chat.ChatCompletionCreateParams["reasoning_effort"],
+                          reasoning_effort:
+                              config.reasoningEffort as OpenAI.Chat.ChatCompletionCreateParams["reasoning_effort"],
                       }
                     : {}),
             };
