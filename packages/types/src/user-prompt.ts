@@ -1,1 +1,1 @@
-export const USER_PROMPT_MAX_LENGTH = 2000;
+export const USER_PROMPT_MAX_LENGTH = 9000;
