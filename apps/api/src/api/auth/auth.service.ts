@@ -7,8 +7,8 @@ import type {
     InstanceSettingUpdateInput,
     UserResponse,
 } from "@proval/types";
-import { resolveUserPromptMaxLength } from "@proval/types";
 import db from "../../db/index.js";
+import { currentUserPromptMaxLength } from "../../util/user-prompt-limit.js";
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const SESSION_COOKIE_NAME = "proval_session";
@@ -73,7 +73,7 @@ export class AuthService {
             isAuthEnabled: setting.authEnabled,
             isRegistrationEnabled: setting.registrationEnabled,
             isSetupRequired,
-            userPromptMaxLength: resolveUserPromptMaxLength(process.env.PROVAL_USER_PROMPT_MAX_LENGTH),
+            userPromptMaxLength: currentUserPromptMaxLength(),
         };
     }
 

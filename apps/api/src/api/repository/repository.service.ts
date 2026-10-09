@@ -1,4 +1,5 @@
 import db from "../../db/index.js";
+import { currentUserPromptMaxLength } from "../../util/user-prompt-limit.js";
 import { activityTable, githubAppTable, githubInstallationTable, repositoryTable } from "@proval/db";
 import { desc, eq, getTableColumns, max } from "drizzle-orm";
 import { App } from "@octokit/app";
@@ -15,7 +16,7 @@ import { GitLabProvider } from "../../git-provider/gitlab.js";
 import type { GitProvider } from "../../git-provider/types.js";
 import { logError } from "../../util/log.js";
 import { decrypt, encrypt } from "../../util/encrypt.js";
-import { reasoningEffortValueList, resolveUserPromptMaxLength } from "@proval/types";
+import { reasoningEffortValueList } from "@proval/types";
 import type {
     ReasoningEffort,
     Repository,
@@ -458,7 +459,7 @@ export class RepositoryService {
         if (!trimmed) {
             return null;
         }
-        const maxLength = resolveUserPromptMaxLength(process.env.PROVAL_USER_PROMPT_MAX_LENGTH);
+        const maxLength = currentUserPromptMaxLength();
         if (trimmed.length > maxLength) {
             throw new Error(`Custom instructions must be at most ${maxLength} characters`);
         }
