@@ -112,7 +112,9 @@ export function createOpenAiSender(config: SenderSDKConfig): LlmSender {
                 throw error;
             }
 
-            const choice = completion.choices[0];
+            // choices can be absent entirely when a provider answers 200 with an
+            // error shaped body, so read it defensively before the guard.
+            const choice = (completion as { choices?: typeof completion.choices }).choices?.[0];
             if (!choice) {
                 throw new Error("The model provider returned a completion without choices");
             }

@@ -356,6 +356,14 @@ describe("createOpenAiSender without streaming", () => {
         expect((error as { status?: number }).status).toBeUndefined();
     });
 
+    test("fails loudly when a buffered reply has no choices key at all", async () => {
+        const sender = bufferedSender({ id: "chatcmpl-error", object: "error" });
+
+        await expect(sender.send([{ role: "user", content: "hi" }], [])).rejects.toThrow(
+            "The model provider returned a completion without choices",
+        );
+    });
+
     test("fails loudly when a buffered reply has neither an error message nor choices", async () => {
         const sender = bufferedSender({ id: "chatcmpl-empty", choices: [] });
 
