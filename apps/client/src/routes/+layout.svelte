@@ -12,9 +12,11 @@
     import { initializeTheme } from "$lib/store/theme";
     import { setUserPromptMaxLength } from "$lib/store/instance";
 
+    import type { LayoutProps } from "./$types";
+
     const GITHUB_URL = "https://github.com/seoes/proval";
 
-    const { data, children } = $props();
+    const { data, children }: LayoutProps = $props();
     const demoMode = isDemoMode();
     let sidebarOpen = $state(false);
     let sidebarAnimate = $state(false);

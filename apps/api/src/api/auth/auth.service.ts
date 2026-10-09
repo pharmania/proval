@@ -7,6 +7,7 @@ import type {
     InstanceSettingUpdateInput,
     UserResponse,
 } from "@proval/types";
+import { resolveUserPromptMaxLength } from "@proval/types";
 import db from "../../db/index.js";
 import { currentUserPromptMaxLength } from "../../util/user-prompt-limit.js";
 
