@@ -109,6 +109,7 @@ describe("createOpenAiSender streaming", () => {
             baseURL: "https://gateway.example/v1",
             model: "opencode-go/deepseek-v4.1-flash",
             timeoutSecond: 600,
+            stream: true,
             reasoningEffort: "xhigh",
             fetch: fetchStub,
         });
@@ -144,6 +145,7 @@ describe("createOpenAiSender streaming", () => {
             baseURL: "https://gateway.example/v1",
             model: "m",
             timeoutSecond: 60,
+            stream: true,
             fetch: fetchStub,
         });
 
@@ -164,6 +166,7 @@ describe("createOpenAiSender streaming", () => {
             baseURL: "https://gateway.example/v1",
             model: "m",
             timeoutSecond: 60,
+            stream: true,
             fetch: fetchStub,
         });
 
@@ -182,6 +185,7 @@ describe("createOpenAiSender streaming", () => {
             baseURL: "https://gateway.example/v1",
             model: "m",
             timeoutSecond: 60,
+            stream: true,
             fetch: fetchStub,
         });
 
@@ -225,5 +229,56 @@ describe("accumulateChatCompletionStream", () => {
         );
 
         expect(accumulated.toolCalls).toEqual([{ id: "call_x", name: "grep", arguments: '{"q":1}' }]);
+    });
+});
+
+describe("createOpenAiSender without streaming", () => {
+    test("uses the buffered path when the provider turns streaming off", async () => {
+        const requests: Record<string, unknown>[] = [];
+        const fetchStub = async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+            requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+            return new Response(
+                JSON.stringify({
+                    id: "chatcmpl-plain",
+                    object: "chat.completion",
+                    created: 0,
+                    model: "test-model",
+                    choices: [
+                        {
+                            index: 0,
+                            message: {
+                                role: "assistant",
+                                content: "buffered answer",
+                                tool_calls: [
+                                    { id: "call_9", type: "function", function: { name: "grep", arguments: '{"query":"x"}' } },
+                                ],
+                            },
+                            finish_reason: "tool_calls",
+                        },
+                    ],
+                    usage: { prompt_tokens: 10, completion_tokens: 4, prompt_tokens_details: { cached_tokens: 1 } },
+                }),
+                { headers: { "content-type": "application/json" } },
+            );
+        };
+
+        const sender = createOpenAiSender({
+            apiKey: "test-key",
+            baseURL: "https://gateway.example/v1",
+            model: "m",
+            timeoutSecond: 60,
+            stream: false,
+            fetch: fetchStub,
+        });
+
+        const result = await sender.send([{ role: "user", content: "hi" }], []);
+
+        expect(requests[0]?.stream).toBeUndefined();
+        expect(requests[0]?.stream_options).toBeUndefined();
+        expect(result.message.content).toBe("buffered answer");
+        expect(result.message.toolCalls).toEqual([{ id: "call_9", name: "grep", arguments: '{"query":"x"}' }]);
+        expect(result.finishReason).toBe("tool_calls");
+        expect(result.requestId).toBe("chatcmpl-plain");
+        expect(result.usage).toEqual({ inputToken: 10, outputToken: 4, cachedInputToken: 1 });
     });
 });

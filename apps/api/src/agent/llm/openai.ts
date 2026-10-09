@@ -1,6 +1,15 @@
 import OpenAI from "openai";
 import type { LlmSender, Message } from "./loop.js";
 import type { SenderSDKConfig } from "./factory.js";
+import z from "zod";
+
+const openRouterErrorSchema = z.object({
+    error: z.object({
+        code: z.number(),
+        message: z.string(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+    }),
+});
 
 export function createOpenAiSender(config: SenderSDKConfig): LlmSender {
     const client = new OpenAI({
@@ -21,12 +30,7 @@ export function createOpenAiSender(config: SenderSDKConfig): LlmSender {
                 },
             }));
 
-            // Stream the completion. A buffered response stays silent while the
-            // model reasons, so an edge proxy in front of the model (Cloudflare
-            // answers a silent origin with 524 after 100 s) can cut the call
-            // before the model finishes. Streaming sends the first bytes
-            // immediately and keeps the connection alive.
-            const stream = await client.chat.completions.create({
+            const request: OpenAI.Chat.ChatCompletionCreateParams = {
                 model: config.model,
                 messages: messages.map(convertToOpenAiMessage),
                 ...(openAiTools.length > 0 ? { tools: openAiTools, tool_choice: "auto" as const } : {}),
@@ -35,29 +39,69 @@ export function createOpenAiSender(config: SenderSDKConfig): LlmSender {
                           reasoning_effort: config.reasoningEffort as OpenAI.Chat.ChatCompletionCreateParams["reasoning_effort"],
                       }
                     : {}),
-                stream: true,
-                stream_options: { include_usage: true },
-            });
+            };
 
-            const accumulated = await accumulateChatCompletionStream(stream);
+            // Streaming sends the first bytes immediately, so a proxy between
+            // Proval and the model does not cut a long reasoning step for
+            // silence. The model provider screen controls the choice.
+            if (config.stream) {
+                const stream = await client.chat.completions.create({
+                    ...request,
+                    stream: true,
+                    stream_options: { include_usage: true },
+                });
 
-            // A provider can answer 200 and report the failure inside the stream.
-            if (accumulated.error) {
-                throw new Error(accumulated.error);
+                const accumulated = await accumulateChatCompletionStream(stream);
+
+                // A provider can answer 200 and report the failure inside the stream.
+                if (accumulated.error) {
+                    throw new Error(accumulated.error);
+                }
+
+                return {
+                    message: {
+                        role: "assistant",
+                        content: accumulated.content,
+                        toolCalls: accumulated.toolCalls,
+                    },
+                    finishReason: accumulated.finishReason ?? "stop",
+                    requestId: accumulated.id,
+                    usage: {
+                        inputToken: accumulated.promptTokens,
+                        outputToken: accumulated.completionTokens,
+                        cachedInputToken: accumulated.cachedInputTokens,
+                    },
+                };
             }
+
+            const completion = await client.chat.completions.create({ ...request });
+
+            if (client.baseURL?.includes("openrouter.ai")) {
+                const result = openRouterErrorSchema.safeParse(completion);
+                if (result.success) {
+                    throw new Error(result.data.error.message);
+                }
+            }
+
+            const choice = completion.choices[0];
+            const message = choice.message;
 
             return {
                 message: {
                     role: "assistant",
-                    content: accumulated.content,
-                    toolCalls: accumulated.toolCalls,
+                    content: message.content ?? null,
+                    toolCalls: message.tool_calls?.map((tc) => ({
+                        id: tc.id,
+                        name: tc.function.name,
+                        arguments: tc.function.arguments,
+                    })),
                 },
-                finishReason: accumulated.finishReason ?? "stop",
-                requestId: accumulated.id,
+                finishReason: choice.finish_reason,
+                requestId: completion.id ?? null,
                 usage: {
-                    inputToken: accumulated.promptTokens,
-                    outputToken: accumulated.completionTokens,
-                    cachedInputToken: accumulated.cachedInputTokens,
+                    inputToken: completion.usage?.prompt_tokens ?? 0,
+                    outputToken: completion.usage?.completion_tokens ?? 0,
+                    cachedInputToken: completion.usage?.prompt_tokens_details?.cached_tokens ?? 0,
                 },
             };
         },

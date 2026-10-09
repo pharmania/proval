@@ -4,6 +4,7 @@
     import fetchApi from "$lib/utils";
     import FormField from "../molecule/FormField.svelte";
     import ToggleButton from "../atom/ToggleButton.svelte";
+    import ToggleSwitch from "../atom/ToggleSwitch.svelte";
     import PatchSecret from "../molecule/PatchSecret.svelte";
     import Card from "../layout/Card.svelte";
     import Modal from "../atom/Modal.svelte";
@@ -19,7 +20,7 @@
     interface Props {
         mode: "create" | "edit";
         modelProviderId?: number;
-        initialData?: Pick<ModelProviderResponse, "provider" | "label" | "baseUrl" | "timeoutSecond">;
+        initialData?: Pick<ModelProviderResponse, "provider" | "label" | "baseUrl" | "timeoutSecond" | "stream">;
         border?: boolean;
     }
 
@@ -29,6 +30,7 @@
     let label = $state(initialData?.label ?? "");
     let baseUrl = $state(initialData?.baseUrl ?? "");
     let timeoutSecond = $state(String(initialData?.timeoutSecond ?? 600));
+    let stream = $state(initialData?.stream ?? true);
     let apiKey = $state("");
     let apiKeyModalOpen = $state(false);
     let testModalOpen = $state(false);
@@ -70,6 +72,7 @@
                 baseUrl,
                 apiKey,
                 timeoutSecond: timeout,
+                stream,
             };
 
             const res = await fetchApi("/model-provider", {
@@ -90,6 +93,7 @@
                 label,
                 baseUrl,
                 timeoutSecond: timeout,
+                stream,
             };
 
             const res = await fetchApi(`/model-provider/${modelProviderId}`, {
@@ -243,6 +247,19 @@
             description="Maximum wait time for LLM responses in seconds. Increase for slow local models.">
             {#snippet children({ id })}
                 <InputText {id} placeholder="600" bind:value={timeoutSecond} />
+            {/snippet}
+        </FormField>
+
+        <FormField
+            label="Stream responses"
+            description="Send the completion as a stream. Keep this on when a proxy or CDN sits between Proval and the model, because a buffered response can be cut while a slow model still reasons."
+            linkLabelToControl={false}
+            upper>
+            {#snippet children({ id: _id })}
+                <div class="flex items-center justify-between gap-2" id={_id}>
+                    <Description>{stream ? "Streaming" : "Buffered"}</Description>
+                    <ToggleSwitch bind:checked={stream} />
+                </div>
             {/snippet}
         </FormField>
 
