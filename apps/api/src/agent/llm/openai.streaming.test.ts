@@ -177,7 +177,7 @@ describe("createOpenAiSender streaming", () => {
 
     test("fails when the provider reports the error inside the stream", async () => {
         const { fetchStub } = captureFetch([
-            chunkFrame({ error: { code: 502, message: "upstream model unavailable" } }),
+            chunkFrame({ error: { code: 429, message: "rate limit reached" } }),
             "data: [DONE]\n\n",
         ]);
         const sender = createOpenAiSender({
@@ -189,8 +189,27 @@ describe("createOpenAiSender streaming", () => {
             fetch: fetchStub,
         });
 
+        // The OpenAI SDK turns an error frame into an APIError before the
+        // accumulator sees the chunk, and that error carries no status. The
+        // accumulator keeps the code for the case where a chunk reaches it.
+        const error = await sender.send([{ role: "user", content: "hi" }], []).catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toBe("rate limit reached");
+    });
+
+    test("fails when the stream ends without a finish reason", async () => {
+        const { fetchStub } = captureFetch(["data: [DONE]\n\n"]);
+        const sender = createOpenAiSender({
+            apiKey: "test-key",
+            baseURL: "https://gateway.example/v1",
+            model: "m",
+            timeoutSecond: 60,
+            stream: true,
+            fetch: fetchStub,
+        });
+
         await expect(sender.send([{ role: "user", content: "hi" }], [])).rejects.toThrow(
-            "upstream model unavailable",
+            "The model stream ended without a finish reason",
         );
     });
 });
@@ -218,6 +237,15 @@ describe("accumulateChatCompletionStream", () => {
         ]);
         expect(accumulated.content).toBeNull();
         expect(accumulated.error).toBeNull();
+    });
+
+    test("keeps the provider code of an in-stream error as a status", async () => {
+        const accumulated = await accumulateChatCompletionStream(
+            from([{ error: { code: 429, message: "rate limit reached" } }]),
+        );
+
+        expect(accumulated.error).toEqual({ message: "rate limit reached", status: 429 });
+        expect(accumulated.finishReason).toBeNull();
     });
 
     test("keeps a partial tool call id and name from an earlier chunk", async () => {

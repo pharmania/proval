@@ -55,7 +55,17 @@ export function createOpenAiSender(config: SenderSDKConfig): LlmSender {
 
                 // A provider can answer 200 and report the failure inside the stream.
                 if (accumulated.error) {
-                    throw new Error(accumulated.error);
+                    const error = new Error(accumulated.error.message) as Error & { status?: number };
+                    if (accumulated.error.status !== undefined) {
+                        error.status = accumulated.error.status;
+                    }
+                    throw error;
+                }
+
+                // A stream that never reported a finish reason did not complete.
+                // The buffered call failed loudly on this shape; keep failing loudly.
+                if (accumulated.finishReason === null) {
+                    throw new Error("The model stream ended without a finish reason");
                 }
 
                 return {
@@ -64,7 +74,7 @@ export function createOpenAiSender(config: SenderSDKConfig): LlmSender {
                         content: accumulated.content,
                         toolCalls: accumulated.toolCalls,
                     },
-                    finishReason: accumulated.finishReason ?? "stop",
+                    finishReason: accumulated.finishReason,
                     requestId: accumulated.id,
                     usage: {
                         inputToken: accumulated.promptTokens,
@@ -119,7 +129,7 @@ export type AccumulatedChatCompletion = {
     promptTokens: number;
     completionTokens: number;
     cachedInputTokens: number;
-    error: string | null;
+    error: { message: string; status?: number } | null;
 };
 
 // Rebuild one completion from the stream chunks: content, tool-call fragments
@@ -134,13 +144,16 @@ export async function accumulateChatCompletionStream(
     let promptTokens = 0;
     let completionTokens = 0;
     let cachedInputTokens = 0;
-    let error: string | null = null;
+    let error: { message: string; status?: number } | null = null;
     const toolCalls = new Map<number, { id: string; name: string; arguments: string }>();
 
     for await (const chunk of stream) {
-        const chunkError = (chunk as { error?: { message?: string } }).error;
+        const chunkError = (chunk as { error?: { message?: string; code?: number | string } }).error;
         if (chunkError) {
-            error = chunkError.message ?? "The model provider returned an error";
+            error = {
+                message: chunkError.message ?? "The model provider returned an error",
+                ...(typeof chunkError.code === "number" ? { status: chunkError.code } : {}),
+            };
             continue;
         }
 
