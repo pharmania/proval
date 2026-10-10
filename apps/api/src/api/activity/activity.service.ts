@@ -269,6 +269,10 @@ export function recoverLegacyReplyTargetComment(): number {
             FROM json_each(activity.logs) AS entry
             WHERE json_extract(entry.value, '$.type') = 'tool-call'
               AND json_extract(entry.value, '$.toolName') IN ('get_pull_request_comment', 'get_issue_comment')
+              AND CASE
+                      WHEN json_valid(json_extract(entry.value, '$.message'))
+                      THEN json_extract(json_extract(entry.value, '$.message'), '$.commentId')
+                  END IS NOT NULL
             ORDER BY entry.key
             LIMIT 1
         )

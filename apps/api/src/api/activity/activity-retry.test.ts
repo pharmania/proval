@@ -231,5 +231,21 @@ if (process.env.PROVAL_ACTIVITY_RETRY_TEST_CHILD !== "1") {
                 expect(row.targetCommentId).toBeNull();
             }
         });
+
+        it("skips an unreadable fetch and reads the later one", async () => {
+            const mixedId = await insertFailedActivity({
+                type: "pr_reply",
+                targetIid: 24,
+                logList: [
+                    toolCallEntry("get_pull_request_comment", '{"commentId":43…'),
+                    toolCallEntry("get_pull_request_comment", '{"commentId":77}'),
+                ],
+            });
+
+            expect(recoverLegacyReplyTargetComment()).toBe(1);
+
+            const [row] = await db.select().from(activityTable).where(eq(activityTable.id, mixedId));
+            expect(row.targetCommentId).toBe(77);
+        });
     });
 }
