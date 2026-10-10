@@ -275,6 +275,16 @@ export function recoverLegacyReplyTargetComment(): number {
         WHERE type IN ('pr_reply', 'issue_reply')
           AND target_comment_id IS NULL
           AND json_valid(logs)
+          AND EXISTS (
+              SELECT 1
+              FROM json_each(activity.logs) AS entry
+              WHERE json_extract(entry.value, '$.type') = 'tool-call'
+                AND json_extract(entry.value, '$.toolName') IN ('get_pull_request_comment', 'get_issue_comment')
+                AND CASE
+                        WHEN json_valid(json_extract(entry.value, '$.message'))
+                        THEN json_extract(json_extract(entry.value, '$.message'), '$.commentId')
+                    END IS NOT NULL
+          )
     `);
     return result.changes;
 }

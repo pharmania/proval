@@ -198,7 +198,7 @@ if (process.env.PROVAL_ACTIVITY_RETRY_TEST_CHILD !== "1") {
                 logList: [toolCallEntry("get_pull_request_comment", '{"commentId":6097072063}')],
             });
 
-            expect(recoverLegacyReplyTargetComment()).toBeGreaterThanOrEqual(1);
+            expect(recoverLegacyReplyTargetComment()).toBe(1);
 
             const [recovered] = await db.select().from(activityTable).where(eq(activityTable.id, legacyId));
             expect(recovered.targetCommentId).toBe(6097072063);
@@ -224,7 +224,7 @@ if (process.env.PROVAL_ACTIVITY_RETRY_TEST_CHILD !== "1") {
                 logList: [toolCallEntry("get_pull_request_comment", '{"commentId":43…')],
             });
 
-            recoverLegacyReplyTargetComment();
+            expect(recoverLegacyReplyTargetComment()).toBe(0);
 
             for (const id of [inlineId, truncatedId]) {
                 const [row] = await db.select().from(activityTable).where(eq(activityTable.id, id));
