@@ -15,8 +15,8 @@ import type {
 import db from "../../db/index.js";
 import { and, count, desc, eq, getTableColumns, gte, inArray, isNotNull, lt, sql, type SQL } from "drizzle-orm";
 import { createSender } from "../../agent/llm/factory.js";
-import { runPullRequestReview } from "../../agent/pull-request/index.js";
-import { runIssueReplyOnOpen } from "../../agent/issue/index.js";
+import { runPullRequestReply, runPullRequestReview } from "../../agent/pull-request/index.js";
+import { runIssueReply, runIssueReplyOnOpen } from "../../agent/issue/index.js";
 import { Workspace } from "../../git-provider/workspace.js";
 import { decrypt } from "../../util/encrypt.js";
 import { logError } from "../../util/log.js";
@@ -24,7 +24,7 @@ import { ModelProviderService } from "../model/model.service.js";
 import { RepositoryService } from "../repository/repository.service.js";
 import { runWithActivity } from "./activity.runner.js";
 
-const RETRY_TYPES = ["pr_review", "issue_open"] as const;
+const RETRY_TYPES = ["pr_review", "pr_reply", "issue_open", "issue_reply"] as const;
 type RetryActivityType = (typeof RETRY_TYPES)[number];
 
 const FINISHED_STATUSES = ["completed", "failed", "canceled"] as const;
@@ -176,6 +176,8 @@ export type ActivityStartInput = {
     modelName: string;
     type: Activity["type"];
     targetIid: number;
+    targetCommentId?: number | null;
+    targetInlineReviewId?: string | null;
     headSha?: string | null;
 };
 
@@ -632,6 +634,8 @@ export class ActivityService {
             modelName: repository.modelName,
             type: activity.type,
             targetIid: activity.targetIid,
+            targetCommentId: activity.targetCommentId,
+            targetInlineReviewId: activity.targetInlineReviewId,
         };
 
         if (activity.type === "pr_review") {
@@ -653,6 +657,49 @@ export class ActivityService {
                     activityId,
                     isFollowUpReview,
                     previousHeadSha: isFollowUpReview ? lastHeadSha : null,
+                }),
+            ).catch((error) => {
+                logError("Activity retry failed", error);
+            });
+            return;
+        }
+
+        if (activity.type === "pr_reply" || activity.type === "issue_reply") {
+            const targetCommentId = activity.targetCommentId;
+            if (targetCommentId == null) {
+                throw new Error("This activity has no comment to reply to");
+            }
+            const targetIid = activity.targetIid;
+
+            if (activity.type === "pr_reply") {
+                runWithActivity(startInput, (activityId) =>
+                    runPullRequestReply({
+                        provider: gitProvider,
+                        workspace,
+                        llmSender,
+                        prIid: targetIid,
+                        commentId: targetCommentId,
+                        inlineReviewId: activity.targetInlineReviewId,
+                        language: repository.language,
+                        userPrompt: repository.userPrompt,
+                        activityId,
+                    }),
+                ).catch((error) => {
+                    logError("Activity retry failed", error);
+                });
+                return;
+            }
+
+            runWithActivity(startInput, (activityId) =>
+                runIssueReply({
+                    provider: gitProvider,
+                    workspace,
+                    llmSender,
+                    issueIid: targetIid,
+                    commentId: targetCommentId,
+                    language: repository.language,
+                    userPrompt: repository.userPrompt,
+                    activityId,
                 }),
             ).catch((error) => {
                 logError("Activity retry failed", error);
