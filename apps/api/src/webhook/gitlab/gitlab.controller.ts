@@ -308,6 +308,8 @@ const handleGitLabPullRequestNoteWebhook: HandleGitLabPullRequestNoteWebhook = a
             modelName: repository.modelName,
             type: "pr_reply",
             targetIid: prIid,
+            targetCommentId: commentId,
+            targetInlineReviewId: isInlineReviewComment ? inlineReviewId : null,
         },
         (activityId) =>
             runPullRequestReply({
@@ -494,6 +496,7 @@ const handleGitLabIssueNoteWebhook: HandleGitLabIssueNoteWebhook = async (
             modelName: repository.modelName,
             type: "issue_reply",
             targetIid: issueIid,
+            targetCommentId: commentId,
         },
         (activityId) =>
             runIssueReply({
