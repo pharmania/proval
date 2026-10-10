@@ -245,6 +245,33 @@ const listOrderBy = [
     desc(activityTable.id),
 ] as const;
 
+/**
+ * A reply created before the retry support does not carry the comment it answered.
+ * Recover it from the stored agent log so an old failed reply can still be replayed.
+ * Only the conversation fetch tools are read, an inline review needs a discussion id
+ * that the log does not keep.
+ */
+export function recoverLegacyReplyTargetComment(): number {
+    const result = db.$client.run(`
+        UPDATE activity
+        SET target_comment_id = (
+            SELECT CASE
+                    WHEN json_valid(json_extract(entry.value, '$.message'))
+                    THEN json_extract(json_extract(entry.value, '$.message'), '$.commentId')
+                END
+            FROM json_each(activity.logs) AS entry
+            WHERE json_extract(entry.value, '$.type') = 'tool-call'
+              AND json_extract(entry.value, '$.toolName') IN ('get_pull_request_comment', 'get_issue_comment')
+            ORDER BY entry.key
+            LIMIT 1
+        )
+        WHERE type IN ('pr_reply', 'issue_reply')
+          AND target_comment_id IS NULL
+          AND json_valid(logs)
+    `);
+    return result.changes;
+}
+
 export class ActivityService {
     public async findAll(
         input: { page: number; limit: number } & ActivityListFilter,

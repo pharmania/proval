@@ -1,5 +1,6 @@
 import { describe, expect, it, mock, spyOn } from "bun:test";
 import { resolve } from "node:path";
+import type { ActivityLogEntryJson } from "@proval/db";
 
 // Keep the module mocks below isolated from the other API tests
 if (process.env.PROVAL_ACTIVITY_RETRY_TEST_CHILD !== "1") {
@@ -38,7 +39,7 @@ if (process.env.PROVAL_ACTIVITY_RETRY_TEST_CHILD !== "1") {
     const { default: db } = await import("../../db/index.js");
     const { activityTable, gitProviderAccessTable, modelProviderTable, repositoryTable } = await import("@proval/db");
     const { encrypt } = await import("../../util/encrypt.js");
-    const { ActivityService } = await import("./activity.service.js");
+    const { ActivityService, recoverLegacyReplyTargetComment } = await import("./activity.service.js");
 
     migrate(db, { migrationsFolder: resolve(import.meta.dir, "../../../../../packages/db/src/migration") });
 
@@ -82,6 +83,7 @@ if (process.env.PROVAL_ACTIVITY_RETRY_TEST_CHILD !== "1") {
         targetIid: number;
         targetCommentId?: number | null;
         targetInlineReviewId?: string | null;
+        logList?: ActivityLogEntryJson[];
     }): Promise<number> {
         const [activity] = await db
             .insert(activityTable)
@@ -97,10 +99,23 @@ if (process.env.PROVAL_ACTIVITY_RETRY_TEST_CHILD !== "1") {
                 targetCommentId: values.targetCommentId ?? null,
                 targetInlineReviewId: values.targetInlineReviewId ?? null,
                 logVersion: "1",
+                logs: values.logList ?? [],
                 errorMessage: "boom",
             })
             .returning({ id: activityTable.id });
         return activity.id;
+    }
+
+    function toolCallEntry(toolName: string, message: string): ActivityLogEntryJson {
+        return {
+            type: "tool-call",
+            level: "info",
+            label: "[PR #21] Reply",
+            toolName,
+            toolCallId: "call-1",
+            message,
+            timestamp: new Date(0).toISOString(),
+        };
     }
 
     async function waitForRetriedActivity(previousId: number) {
@@ -169,6 +184,49 @@ if (process.env.PROVAL_ACTIVITY_RETRY_TEST_CHILD !== "1") {
 
             await expect(service.retry(failedId)).rejects.toThrow("This activity has no comment to reply to");
             expect(runPullRequestReplyMock.mock.calls.length).toBe(callCount);
+        });
+    });
+
+    describe("legacy reply recovery", () => {
+        it("reads the replied comment back from the agent log", async () => {
+            const legacyId = await insertFailedActivity({
+                type: "pr_reply",
+                targetIid: 21,
+                logList: [toolCallEntry("get_pull_request_comment", '{"commentId":6097072063}')],
+            });
+
+            expect(recoverLegacyReplyTargetComment()).toBeGreaterThanOrEqual(1);
+
+            const [recovered] = await db.select().from(activityTable).where(eq(activityTable.id, legacyId));
+            expect(recovered.targetCommentId).toBe(6097072063);
+
+            await service.retry(legacyId);
+
+            const retried = await waitForRetriedActivity(legacyId);
+            expect(runPullRequestReplyMock).toHaveBeenCalledWith(
+                expect.objectContaining({ prIid: 21, commentId: 6097072063 }),
+            );
+            expect(retried.targetCommentId).toBe(6097072063);
+        });
+
+        it("leaves an inline review reply alone and ignores a truncated log", async () => {
+            const inlineId = await insertFailedActivity({
+                type: "pr_reply",
+                targetIid: 22,
+                logList: [toolCallEntry("get_pull_request_inline_review_comment", '{"commentId":42}')],
+            });
+            const truncatedId = await insertFailedActivity({
+                type: "pr_reply",
+                targetIid: 23,
+                logList: [toolCallEntry("get_pull_request_comment", '{"commentId":43…')],
+            });
+
+            recoverLegacyReplyTargetComment();
+
+            for (const id of [inlineId, truncatedId]) {
+                const [row] = await db.select().from(activityTable).where(eq(activityTable.id, id));
+                expect(row.targetCommentId).toBeNull();
+            }
         });
     });
 
