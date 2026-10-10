@@ -245,6 +245,13 @@ const listOrderBy = [
     desc(activityTable.id),
 ] as const;
 
+function requireReplyTargetComment(activity: ActivityResponse): number {
+    if (activity.targetCommentId == null) {
+        throw new Error("This activity has no comment to reply to");
+    }
+    return activity.targetCommentId;
+}
+
 /**
  * A reply created before the retry support does not carry the comment it answered.
  * Recover it from the stored agent log so an old failed reply can still be replayed.
@@ -633,6 +640,12 @@ export class ActivityService {
         if (!RETRY_TYPES.includes(activity.type as RetryActivityType)) {
             throw new Error("This activity type cannot be retried");
         }
+        // A reply without its comment has nothing to replay. Resolve it here, before the
+        // provider setup below, which reaches the Git provider API for a GitHub repository.
+        const replyTargetCommentId =
+            activity.type === "pr_reply" || activity.type === "issue_reply"
+                ? requireReplyTargetComment(activity)
+                : null;
         if (activity.repositoryId == null) {
             throw new Error("Repository is no longer linked to this activity");
         }
@@ -691,11 +704,7 @@ export class ActivityService {
             return;
         }
 
-        if (activity.type === "pr_reply" || activity.type === "issue_reply") {
-            const targetCommentId = activity.targetCommentId;
-            if (targetCommentId == null) {
-                throw new Error("This activity has no comment to reply to");
-            }
+        if (replyTargetCommentId != null) {
             const targetIid = activity.targetIid;
 
             if (activity.type === "pr_reply") {
@@ -705,7 +714,7 @@ export class ActivityService {
                         workspace,
                         llmSender,
                         prIid: targetIid,
-                        commentId: targetCommentId,
+                        commentId: replyTargetCommentId,
                         inlineReviewId: activity.targetInlineReviewId,
                         language: repository.language,
                         userPrompt: repository.userPrompt,
@@ -723,7 +732,7 @@ export class ActivityService {
                     workspace,
                     llmSender,
                     issueIid: targetIid,
-                    commentId: targetCommentId,
+                    commentId: replyTargetCommentId,
                     language: repository.language,
                     userPrompt: repository.userPrompt,
                     activityId,

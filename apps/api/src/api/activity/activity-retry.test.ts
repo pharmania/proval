@@ -1,4 +1,4 @@
-import { describe, expect, it, mock, spyOn } from "bun:test";
+import { afterAll, describe, expect, it, mock, spyOn } from "bun:test";
 import { resolve } from "node:path";
 import type { ActivityLogEntryJson } from "@proval/db";
 
@@ -44,6 +44,9 @@ if (process.env.PROVAL_ACTIVITY_RETRY_TEST_CHILD !== "1") {
     migrate(db, { migrationsFolder: resolve(import.meta.dir, "../../../../../packages/db/src/migration") });
 
     const consoleError = spyOn(console, "error").mockImplementation(() => {});
+    afterAll(() => {
+        consoleError.mockRestore();
+    });
 
     const [modelProvider] = await db
         .insert(modelProviderTable)
@@ -229,6 +232,4 @@ if (process.env.PROVAL_ACTIVITY_RETRY_TEST_CHILD !== "1") {
             }
         });
     });
-
-    consoleError.mockRestore();
 }
